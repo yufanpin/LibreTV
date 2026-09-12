@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { checkUpstreamAllowed } from './functions/_lib/ssrf.js';
 
 dotenv.config();
 
@@ -96,29 +97,8 @@ app.get('/s=:keyword', async (req, res) => {
   }
 });
 
-function isValidUrl(urlString) {
-  try {
-    const parsed = new URL(urlString);
-    const allowedProtocols = ['http:', 'https:'];
-    
-    // 从环境变量获取阻止的主机名列表
-    const blockedHostnames = (process.env.BLOCKED_HOSTS || 'localhost,127.0.0.1,0.0.0.0,::1').split(',');
-    
-    // 从环境变量获取阻止的 IP 前缀
-    const blockedPrefixes = (process.env.BLOCKED_IP_PREFIXES || '192.168.,10.,172.').split(',');
-    
-    if (!allowedProtocols.includes(parsed.protocol)) return false;
-    if (blockedHostnames.includes(parsed.hostname)) return false;
-    
-    for (const prefix of blockedPrefixes) {
-      if (parsed.hostname.startsWith(prefix)) return false;
-    }
-    
-    return true;
-  } catch {
-    return false;
-  }
-}
+// 出网 URL 安全校验（SSRF 防护），与 Cloudflare Pages 代理共享 functions/_lib/ssrf.js
+// 覆盖：协议白名单、主机名黑名单、全格式 IP 字面量私网校验、可选 DoH 解析校验
 
 // 验证代理请求的鉴权
 function validateProxyAuth(req) {
@@ -167,9 +147,10 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
     const encodedUrl = req.params.encodedUrl;
     const targetUrl = decodeURIComponent(encodedUrl);
 
-    // 安全验证
-    if (!isValidUrl(targetUrl)) {
-      return res.status(400).send('无效的 URL');
+    // 安全验证（SSRF 防护）
+    const verdict = await checkUpstreamAllowed(targetUrl, { doh: process.env.SSRF_DOH === '1' });
+    if (!verdict.ok) {
+      return res.status(400).send(`无效的 URL: ${verdict.reason}`);
     }
 
     log(`代理请求: ${targetUrl}`);

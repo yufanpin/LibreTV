@@ -80,15 +80,13 @@ window.onload = function() {
         manualRedirect.href = finalPlayerUrl;
     }
 
-    // 更新meta refresh标签
+    // 更新meta refresh标签（作为脚本加载失败的兜底，立即跳转）
     const metaRefresh = document.querySelector('meta[http-equiv="refresh"]');
     if (metaRefresh) {
-        metaRefresh.content = `3; url=${finalPlayerUrl}`;
+        metaRefresh.content = `0; url=${finalPlayerUrl}`;
     }
     
-    // 重定向到播放器页面
-    setTimeout(() => {
-        clearInterval(statusInterval);
-        window.location.href = finalPlayerUrl;
-    }, 2800); // 稍微早于meta refresh的时间，确保我们的JS控制重定向
+    // 立即重定向到播放器页面，避免 3 秒等待（否则浏览器历史中会残留陈旧 watch.html 记录）
+    clearInterval(statusInterval);
+    window.location.href = finalPlayerUrl;
 };
