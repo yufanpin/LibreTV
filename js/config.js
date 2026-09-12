@@ -119,6 +119,42 @@ const API_SITES = {
         name: '空内容测试源',
         adult: true
     },
+    hongniuzy2: {
+        api: 'https://www.hongniuzy2.com/api.php/provide/vod',
+        name: '红牛资源',
+    },
+    jyzyapi: {
+        api: 'https://jyzyapi.com/provide/vod',
+        name: '金鹰资源',
+    },
+    guangsuapi: {
+        api: 'https://api.guangsuapi.com/api.php/provide/vod',
+        name: '光速资源',
+    },
+    hhzyapi: {
+        api: 'https://hhzyapi.com/api.php/provide/vod',
+        name: '豪华资源',
+    },
+    huyaapi: {
+        api: 'https://www.huyaapi.com/api.php/provide/vod',
+        name: '虎牙资源',
+    },
+    subocaiji: {
+        api: 'https://subocaiji.com/api.php/provide/vod',
+        name: '速博资源',
+    },
+    xinlangapi: {
+        api: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod',
+        name: '新浪资源',
+    },
+    ffzycj: {
+        api: 'http://cj.ffzyapi.com/api.php/provide/vod',
+        name: '非凡采集',
+    },
+    zuidme: {
+        api: 'http://zuidazy.me/api.php/provide/vod',
+        name: '最大资源2',
+    },
 };
 
 // 定义合并方法
