@@ -2,6 +2,9 @@
 let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["tyyszy","dyttzy", "bfzy", "ruyi"]'); // 默认选中资源
 let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
 
+// 去重后的搜索结果（供结果卡片点击时按索引取用）
+let allResultItems = [];
+
 // 添加当前播放的集数索引
 let currentEpisodeIndex = 0;
 // 添加当前视频的所有集数
@@ -648,6 +651,21 @@ async function search() {
             }
         });
 
+        // 处理搜索结果过滤：如果启用了黄色内容过滤，则过滤掉分类含有敏感内容的项目
+        const yellowFilterEnabled = localStorage.getItem('yellowFilterEnabled') === 'true';
+        if (yellowFilterEnabled) {
+            const banned = ['伦理片', '福利', '里番动漫', '门事件', '萝莉少女', '制服诱惑', '国产传媒', 'cosplay', '黑丝诱惑', '无码', '日本无码', '有码', '日本有码', 'SWAG', '网红主播', '色情片', '同性片', '福利视频', '福利片'];
+            allResults = allResults.filter(item => {
+                const typeName = item.type_name || '';
+                return !banned.some(keyword => typeName.includes(keyword));
+            });
+        }
+
+        // 对搜索结果去重：同名 + 同类型 + 同年份视为同一视频，聚合多个来源
+        allResults = mergeDuplicateResults(allResults);
+        // 保存去重后的结果，供结果卡片点击时按索引取用
+        allResultItems = allResults;
+
         // 对搜索结果进行排序：按名称优先，名称相同时按接口源排序
         allResults.sort((a, b) => {
             // 首先按照视频名称排序
@@ -704,37 +722,29 @@ async function search() {
             // 如果更新URL失败，继续执行搜索
         }
 
-        // 处理搜索结果过滤：如果启用了黄色内容过滤，则过滤掉分类含有敏感内容的项目
-        const yellowFilterEnabled = localStorage.getItem('yellowFilterEnabled') === 'true';
-        if (yellowFilterEnabled) {
-            const banned = ['伦理片', '福利', '里番动漫', '门事件', '萝莉少女', '制服诱惑', '国产传媒', 'cosplay', '黑丝诱惑', '无码', '日本无码', '有码', '日本有码', 'SWAG', '网红主播', '色情片', '同性片', '福利视频', '福利片'];
-            allResults = allResults.filter(item => {
-                const typeName = item.type_name || '';
-                return !banned.some(keyword => typeName.includes(keyword));
-            });
-        }
-
         // 添加XSS保护，使用textContent和属性转义
-        const safeResults = allResults.map(item => {
-            const safeId = item.vod_id ? item.vod_id.toString().replace(/[^\w-]/g, '') : '';
+        const safeResults = allResults.map((item, index) => {
             const safeName = (item.vod_name || '').toString()
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
-            const sourceInfo = item.source_name ?
-                `<span class="bg-[#222] text-xs px-1.5 py-0.5 rounded-full">${item.source_name}</span>` : '';
-            const sourceCode = item.source_code || '';
 
-            // 添加API URL属性，用于详情获取
-            const apiUrlAttr = item.api_url ?
-                `data-api-url="${item.api_url.replace(/"/g, '&quot;')}"` : '';
+            // 多来源徽章（去重后聚合）：最多显示4个，超出显示 +N
+            const sources = Array.isArray(item.sources) ? item.sources : [];
+            const visibleSources = sources.slice(0, 4);
+            const sourceBadgesHtml = visibleSources.map(src =>
+                `<span class="bg-[#222] text-xs px-1.5 py-0.5 rounded-full">${(src.source_name || '').toString().replace(/</g, '&lt;')}</span>`
+            ).join('');
+            const moreCount = sources.length - visibleSources.length;
+            const sourceInfo = sourceBadgesHtml +
+                (moreCount > 0 ? `<span class="bg-[#222] text-xs px-1.5 py-0.5 rounded-full">+${moreCount}</span>` : '');
 
             // 修改为水平卡片布局，图片在左侧，文本在右侧，并优化样式
             const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
 
             return `
                 <div class="card-hover bg-[#111] rounded-lg overflow-hidden cursor-pointer transition-all hover:scale-[1.02] h-full shadow-sm hover:shadow-md" 
-                     onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" ${apiUrlAttr}>
+                     onclick="showDetailsFromResult(${index})">
                     <div class="flex h-full">
                         ${hasCover ? `
                         <div class="relative flex-shrink-0 search-card-img-container">
@@ -794,6 +804,114 @@ async function search() {
     } finally {
         hideLoading();
     }
+}
+
+// 合并去重搜索结果：同名 + 同类型 + 同年份 视为同一视频，聚合多个来源
+// 返回新数组，每项保留首个来源的展示字段，并附加 sources 数组
+function mergeDuplicateResults(results) {
+    const map = new Map();
+
+    results.forEach(item => {
+        const key = [
+            (item.vod_name || '').toString().trim(),
+            (item.type_name || '').toString().trim(),
+            (item.vod_year || '').toString().trim()
+        ].join('|');
+
+        if (map.has(key)) {
+            const existing = map.get(key);
+            // 聚合来源信息（同一来源只保留一次）
+            if (!existing.sources.some(s => s.source_code === item.source_code)) {
+                existing.sources.push({
+                    source_name: item.source_name,
+                    source_code: item.source_code,
+                    vod_id: item.vod_id
+                });
+            }
+            // 补充缺失的展示字段（封面等），以有内容的优先
+            if (!existing.vod_pic && item.vod_pic) existing.vod_pic = item.vod_pic;
+        } else {
+            map.set(key, {
+                ...item,
+                sources: [{
+                    source_name: item.source_name,
+                    source_code: item.source_code,
+                    vod_id: item.vod_id
+                }]
+            });
+        }
+    });
+
+    return Array.from(map.values());
+}
+
+// 从去重后的结果卡片进入详情：单来源直接打开，多来源弹窗选择
+function showDetailsFromResult(index) {
+    const item = allResultItems[index];
+    if (!item) return;
+
+    const sources = Array.isArray(item.sources) ? item.sources : [];
+    if (sources.length <= 1) {
+        // 单来源（或历史数据无 sources），直接打开详情
+        const src = sources[0] || item;
+        showDetails(src.vod_id, item.vod_name, src.source_code);
+        return;
+    }
+
+    showSourcePicker(item);
+}
+
+// 多来源视频的来源选择弹窗
+function showSourcePicker(item) {
+    let modal = document.getElementById('sourcePickerModal');
+    if (modal) modal.remove();
+
+    modal = document.createElement('div');
+    modal.id = 'sourcePickerModal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50';
+
+    const sources = Array.isArray(item.sources) ? item.sources : [];
+    const safeName = (item.vod_name || '').toString()
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    modal.innerHTML = `
+        <div class="bg-[#191919] rounded-lg p-6 max-w-sm w-full relative">
+            <button id="closeSourcePicker" class="absolute top-4 right-4 text-gray-400 hover:text-white text-xl">&times;</button>
+            <h3 class="text-xl font-bold mb-4 break-words pr-6">${safeName}</h3>
+            <p class="text-sm text-gray-400 mb-3">共找到 ${sources.length} 个播放源，请选择：</p>
+            <div id="sourcePickerList" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // 用 DOM 构建来源按钮，闭包直接捕获 src，避免内联 onclick 字符串注入
+    const list = modal.querySelector('#sourcePickerList');
+    sources.forEach(src => {
+        const btn = document.createElement('button');
+        btn.className = 'w-full text-left px-4 py-2.5 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg text-sm text-gray-200 transition-colors';
+        btn.textContent = src.source_name || '未知来源';
+        btn.addEventListener('click', () => {
+            closeSourcePicker();
+            showDetails(src.vod_id, item.vod_name, src.source_code);
+        });
+        list.appendChild(btn);
+    });
+
+    // 关闭按钮与遮罩层点击关闭
+    modal.querySelector('#closeSourcePicker').addEventListener('click', closeSourcePicker);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeSourcePicker();
+    });
+}
+
+// 关闭来源选择弹窗
+function closeSourcePicker() {
+    const modal = document.getElementById('sourcePickerModal');
+    if (modal) modal.remove();
 }
 
 // 切换清空按钮的显示状态
