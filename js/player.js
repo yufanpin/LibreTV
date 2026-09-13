@@ -978,6 +978,49 @@ function copyLinks() {
     }
 }
 
+// 下载指定集的 .m3u8 播放列表文件（供 yt-dlp / VLC / N_m3u8DL-RE 等工具下载视频）
+function downloadEpisode(index) {
+    if (!Array.isArray(currentEpisodes) || currentEpisodes.length === 0) {
+        showToast('暂无可用播放地址', 'error');
+        return;
+    }
+
+    // 边界约束：确保索引在有效范围内
+    const safeIndex = Math.min(Math.max(index, 0), currentEpisodes.length - 1);
+    const episodeUrl = currentEpisodes[safeIndex];
+    if (!episodeUrl || !/^https?:\/\//i.test(episodeUrl)) {
+        showToast('该集播放地址无效', 'error');
+        return;
+    }
+
+    // 生成引用该集直链的最小合法 M3U8 播放列表
+    const m3u8Content = [
+        '#EXTM3U',
+        '#EXT-X-VERSION:3',
+        '#EXT-X-PLAYLIST-TYPE:VOD',
+        '#EXTINF:-1,',
+        episodeUrl,
+        '#EXT-X-ENDLIST'
+    ].join('\n');
+
+    // 清理文件名中的非法字符（Windows 不允许 \/:*?"<>|）
+    const safeTitle = (currentVideoTitle || '视频').replace(/[\\/:*?"<>|]/g, '_').trim() || '视频';
+    const fileName = `${safeTitle}_第${safeIndex + 1}集.m3u8`;
+
+    // 创建 Blob 并触发下载
+    const blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+
+    showToast('播放列表已下载，可用 yt-dlp / VLC 下载视频', 'success');
+}
+
 // 切换集数排序
 function toggleEpisodeOrder() {
     episodesReversed = !episodesReversed;
