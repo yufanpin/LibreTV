@@ -1197,10 +1197,18 @@ function renderEpisodes(vodName, sourceCode, vodId) {
         // 根据倒序状态计算真实的剧集索引
         const realIndex = episodesReversed ? currentEpisodes.length - 1 - index : index;
         return `
-            <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')" 
-                    class="px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors text-center episode-btn">
-                ${realIndex + 1}
-            </button>
+            <div class="relative">
+                <button id="episode-${realIndex}" onclick="playVideo('${episode}','${vodName.replace(/"/g, '&quot;')}', '${sourceCode}', ${realIndex}, '${vodId}')" 
+                        class="w-full px-4 py-2 bg-[#222] hover:bg-[#333] border border-[#333] rounded-lg transition-colors text-center episode-btn">
+                    ${realIndex + 1}
+                </button>
+                <button onclick="downloadEpisode(${realIndex})" title="下载第${realIndex + 1}集播放列表" aria-label="下载第${realIndex + 1}集"
+                        class="absolute -top-1.5 -right-1.5 w-6 h-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs flex items-center justify-center shadow-md transition-colors z-10">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4"></path>
+                    </svg>
+                </button>
+            </div>
         `;
     }).join('');
 }
@@ -1214,6 +1222,39 @@ function copyLinks() {
     }).catch(err => {
         showToast('复制失败，请检查浏览器权限', 'error');
     });
+}
+
+// 下载指定集的 .m3u8 播放列表文件（供 yt-dlp / VLC / N_m3u8DL-RE 等工具下载视频）
+function downloadEpisode(index) {
+    if (!Array.isArray(currentEpisodes) || currentEpisodes.length === 0) {
+        showToast('暂无可用播放地址', 'error');
+        return;
+    }
+
+    // 边界约束：确保索引在有效范围内
+    const safeIndex = Math.min(Math.max(index, 0), currentEpisodes.length - 1);
+    const episodeUrl = currentEpisodes[safeIndex];
+    if (!episodeUrl || !/^https?:\/\//i.test(episodeUrl)) {
+        showToast('该集播放地址无效', 'error');
+        return;
+    }
+
+    // 生成引用该集直链的最小合法 M3U8 播放列表
+    const m3u8Content = [
+        '#EXTM3U',
+        '#EXT-X-VERSION:3',
+        '#EXT-X-PLAYLIST-TYPE:VOD',
+        '#EXTINF:-1,',
+        episodeUrl,
+        '#EXT-X-ENDLIST'
+    ].join('\n');
+
+    // 清理文件名中的非法字符（Windows 不允许 \/:*?"<>|）
+    const safeTitle = (currentVideoTitle || '视频').replace(/[\\/:*?"<>|]/g, '_').trim() || '视频';
+    const fileName = `${safeTitle}_第${safeIndex + 1}集.m3u8`;
+
+    saveStringAsFile(m3u8Content, fileName);
+    showToast('播放列表已下载，可用 yt-dlp / VLC 下载视频', 'success');
 }
 
 // 切换排序状态的函数
